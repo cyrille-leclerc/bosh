@@ -15,6 +15,9 @@ module Bosh::Cli
       with_indent('  ') do
         artifact = locate_artifact(resource)
         if artifact.nil?
+          return unless validate(resource)
+
+          say("No artifact found for #{resource.name}".make_red)
           artifact = create_artifact(resource)
           say("Generated version '#{artifact.fingerprint}'".make_green)
 
@@ -60,10 +63,7 @@ module Bosh::Cli
     def locate_artifact(resource)
       artifact = @archive_repository.lookup(resource)
 
-      if artifact.nil?
-        say("No artifact found for #{resource.name}".make_red)
-        return nil
-      end
+      return nil if artifact.nil?
 
       if artifact.dev_artifact? && final? && !dry_run?
         @archive_repository.promote_from_dev_to_final(artifact)
@@ -76,9 +76,9 @@ module Bosh::Cli
     end
 
     def create_artifact(resource)
-      tarball_path = safe_temp_file(resource.name, '.tgz')
-
       say('Generating...')
+
+      tarball_path = safe_temp_file(resource.name, '.tgz')
 
       copy_files(resource)
       resource.run_script(:pre_packaging, staging_dir)
@@ -94,6 +94,16 @@ module Bosh::Cli
 
       sha1 = BuildArtifact.checksum(tarball_path)
       BuildArtifact.new(resource.name, fingerprint, tarball_path, sha1, resource.dependencies, true, !final?)
+    ensure
+      cleanup
+    end
+
+    def validate(resource)
+      resource.validate!
+      true
+    rescue Bosh::Cli::MissingLicense => e
+      say("#{'Warning'.make_red}: #{e.message}")
+      false
     end
 
     def file_checksum(path)
@@ -114,6 +124,10 @@ module Bosh::Cli
       Dir::Tmpname.create([prefix, suffix], dir) do |tmpname, _, _|
         File.open(tmpname, File::RDWR|File::CREAT|File::EXCL).close
       end
+    end
+
+    def cleanup
+      FileUtils.rm_rf(staging_dir)
     end
   end
 end

@@ -131,6 +131,8 @@ require 'bosh/director/models/helpers/model_helper'
 
 require 'bosh/director/db_backup'
 require 'bosh/director/blobstores'
+require 'bosh/director/api/local_identity_provider'
+require 'bosh/director/api/uaa_identity_provider'
 require 'bosh/director/app'
 
 module Bosh::Director
@@ -138,7 +140,6 @@ module Bosh::Director
 end
 
 require 'bosh/director/thread_pool'
-require 'bosh/director/api/controller_helpers'
 require 'bosh/director/api/controllers/backups_controller'
 require 'bosh/director/api/controllers/deployments_controller'
 require 'bosh/director/api/controllers/packages_controller'
@@ -152,3 +153,4 @@ require 'bosh/director/api/controllers/task_controller'
 require 'bosh/director/api/controllers/users_controller'
 require 'bosh/director/api/controllers/compiled_packages_controller'
 require 'bosh/director/api/controllers/locks_controller'
+require 'bosh/director/api/route_configuration'

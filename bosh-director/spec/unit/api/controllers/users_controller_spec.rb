@@ -6,38 +6,27 @@ module Bosh::Director
     describe Controllers::UsersController do
       include Rack::Test::Methods
 
-      let!(:temp_dir) { Dir.mktmpdir}
+      subject(:app) { described_class.new(identity_provider) }
 
-      before do
+      let(:identity_provider) { Bosh::Director::Api::LocalIdentityProvider.new(Bosh::Director::Api::UserManager.new) }
+      let(:temp_dir) { Dir.mktmpdir}
+      let(:test_config)  do
         blobstore_dir = File.join(temp_dir, 'blobstore')
         FileUtils.mkdir_p(blobstore_dir)
 
-        test_config = Psych.load(spec_asset('test-director-config.yml'))
-        test_config['dir'] = temp_dir
-        test_config['blobstore'] = {
+        config = Psych.load(spec_asset('test-director-config.yml'))
+        config['dir'] = temp_dir
+        config['blobstore'] = {
           'provider' => 'local',
           'options' => {'blobstore_path' => blobstore_dir}
         }
-        test_config['snapshots']['enabled'] = true
-        Config.configure(test_config)
-        @director_app = App.new(Config.load_hash(test_config))
+        config['snapshots']['enabled'] = true
+        config
       end
 
-      after do
-        FileUtils.rm_rf(temp_dir)
-      end
+      before { App.new(Config.load_hash(test_config)) }
 
-      def app
-        @rack_app ||= described_class
-      end
-
-      def login_as_admin
-        basic_authorize 'admin', 'admin'
-      end
-
-      def login_as(username, password)
-        basic_authorize username, password
-      end
+      after { FileUtils.rm_rf(temp_dir) }
 
       it 'requires auth' do
         get '/'
@@ -56,7 +45,7 @@ module Bosh::Director
       end
 
       describe 'API calls' do
-        before(:each) { login_as_admin }
+        before(:each) { basic_authorize 'admin', 'admin' }
 
         describe 'users' do
           let (:username) { 'john' }
@@ -76,7 +65,7 @@ module Bosh::Director
           it "doesn't create a user with existing username" do
             post '/', Yajl::Encoder.encode(user_data), { 'CONTENT_TYPE' => 'application/json' }
 
-            login_as(username, password)
+            basic_authorize(username, password)
             post '/', Yajl::Encoder.encode(user_data), { 'CONTENT_TYPE' => 'application/json' }
 
             expect(last_response.status).to eq(400)
@@ -86,7 +75,7 @@ module Bosh::Director
           it 'updates user password but not username' do
             post '/', Yajl::Encoder.encode(user_data), { 'CONTENT_TYPE' => 'application/json' }
 
-            login_as(username, password)
+            basic_authorize(username, password)
             new_data = {'username' => username, 'password' => '456'}
             put "/#{username}", Yajl::Encoder.encode(new_data), { 'CONTENT_TYPE' => 'application/json' }
 
@@ -94,7 +83,7 @@ module Bosh::Director
             user = Models::User[:username => username]
             expect(BCrypt::Password.new(user.password)).to eq('456')
 
-            login_as(username, '456')
+            basic_authorize(username, '456')
             change_name = {'username' => 'john2', 'password' => password}
             put "/#{username}", Yajl::Encoder.encode(change_name), { 'CONTENT_TYPE' => 'application/json' }
             expect(last_response.status).to eq(400)
@@ -106,7 +95,7 @@ module Bosh::Director
           it 'deletes user' do
             post '/', Yajl::Encoder.encode(user_data), { 'CONTENT_TYPE' => 'application/json' }
 
-            login_as(username, password)
+            basic_authorize(username, password)
             delete "/#{username}"
 
             expect(last_response.status).to eq(204)

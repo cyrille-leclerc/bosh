@@ -5,19 +5,21 @@ module Bosh::Director
   describe Api::Controllers::StemcellsController do
     include Rack::Test::Methods
 
-    subject(:app) { described_class } # "app" is a Rack::Test hook
+    subject(:app) { described_class.new(identity_provider) }
 
-    let!(:temp_dir) { Dir.mktmpdir}
-
-    before do
+    let(:identity_provider) { Bosh::Director::Api::LocalIdentityProvider.new(Bosh::Director::Api::UserManager.new) }
+    let(:temp_dir) { Dir.mktmpdir}
+    let(:test_config) do
       config = Psych.load(spec_asset('test-director-config.yml'))
       config['dir'] = temp_dir
       config['blobstore'] = {
         'provider' => 'local',
         'options' => {'blobstore_path' => File.join(temp_dir, 'blobstore')}
       }
-      App.new(Config.load_hash(config))
+      config
     end
+
+    before { App.new(Config.load_hash(test_config)) }
 
     after { FileUtils.rm_rf(temp_dir) }
 

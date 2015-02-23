@@ -6,32 +6,30 @@ module Bosh::Director
     describe Controllers::DeploymentsController do
       include Rack::Test::Methods
 
-      before { basic_authorize 'admin', 'admin' }
+      subject(:app) { described_class.new(identity_provider) }
 
-      let!(:temp_dir) { Dir.mktmpdir}
-
-      before do
+      let(:identity_provider) { Bosh::Director::Api::LocalIdentityProvider.new(Bosh::Director::Api::UserManager.new) }
+      let(:temp_dir) { Dir.mktmpdir}
+      let(:test_config) do
         blobstore_dir = File.join(temp_dir, 'blobstore')
         FileUtils.mkdir_p(blobstore_dir)
 
-        test_config = Psych.load(spec_asset('test-director-config.yml'))
-        test_config['dir'] = temp_dir
-        test_config['blobstore'] = {
-            'provider' => 'local',
-            'options' => {'blobstore_path' => blobstore_dir}
+        config = Psych.load(spec_asset('test-director-config.yml'))
+        config['dir'] = temp_dir
+        config['blobstore'] = {
+          'provider' => 'local',
+          'options' => {'blobstore_path' => blobstore_dir}
         }
-        test_config['snapshots']['enabled'] = true
-        Config.configure(test_config)
-        @director_app = App.new(Config.load_hash(test_config))
+        config['snapshots']['enabled'] = true
+        config
       end
 
-      after do
-        FileUtils.rm_rf(temp_dir)
+      before do
+        App.new(Config.load_hash(test_config))
+        basic_authorize 'admin', 'admin'
       end
 
-      def app
-        @rack_app ||= described_class
-      end
+      after { FileUtils.rm_rf(temp_dir) }
 
       it 'sets the date header' do
         get '/'
@@ -299,7 +297,14 @@ module Bosh::Director
           end
 
           it 'scans and fixes problems' do
-            put '/mycloud/scan_and_fix', Yajl::Encoder.encode('jobs' => { 'job' => [0] }), { 'CONTENT_TYPE' => 'application/json' }
+            expect(Resque).to receive(:enqueue).with(
+                Jobs::CloudCheck::ScanAndFix,
+                kind_of(Numeric),
+                'mycloud',
+                [['job', 0], ['job', 1], ['job', 6]],
+                false
+              )
+            put '/mycloud/scan_and_fix', Yajl::Encoder.encode('jobs' => {'job' => [0, 1, 6]}), {'CONTENT_TYPE' => 'application/json'}
             expect_redirect_to_queued_task(last_response)
           end
         end

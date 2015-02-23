@@ -89,6 +89,28 @@ describe Bosh::Cli::ArchiveBuilder, 'dev build' do
       end
     end
 
+    describe 'validation' do
+      it 'validates resource' do
+        validation_error = RuntimeError.new('fake-validation-error')
+        allow(resource).to receive(:validate!).and_raise(validation_error)
+        expect {
+          builder.build(resource)
+        }.to raise_error(validation_error)
+      end
+
+      context 'when validation fails because of missing license' do
+        before { allow(resource).to receive(:validate!).and_raise(Bosh::Cli::MissingLicense.new('missing-license-message')) }
+
+        it 'prints a warning' do
+          allow(builder).to receive(:say)
+          expect(builder).to receive(:say).with('Warning: missing-license-message')
+          expect {
+            builder.build(resource)
+          }.to_not raise_error
+        end
+      end
+    end
+
     context 'when the Resource is a Package' do
       it 'generates a tarball' do
         artifact = builder.build(resource)
@@ -133,6 +155,19 @@ describe Bosh::Cli::ArchiveBuilder, 'dev build' do
         explosion = open_archive(artifact.tarball_path)
 
         expect(directory_listing(explosion)).to contain_exactly("README.2", "README.md", "lib/1.rb", "lib/2.rb")
+      end
+
+      it 'cleans staging directory' do
+        builder.build(resource)
+        release_source.remove_file('src', 'lib/1.rb')
+        second_resource = Bosh::Cli::Resources::Package.new(
+          release_source.join(resource_base),
+          release_source.path
+        )
+
+        artifact = builder.build(second_resource)
+        explosion = open_archive(artifact.tarball_path)
+        expect(directory_listing(explosion)).to_not include('lib/1.rb')
       end
 
       it 'uploads the tarball' do

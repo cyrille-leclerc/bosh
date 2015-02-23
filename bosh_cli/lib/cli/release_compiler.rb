@@ -37,8 +37,9 @@ module Bosh::Cli
 
       @name = @manifest["name"]
       @version = @manifest["version"]
-      @packages = @manifest["packages"].map { |pkg| OpenStruct.new(pkg) }
-      @jobs = @manifest["jobs"].map { |job| OpenStruct.new(job) }
+      @packages = @manifest.fetch("packages", []).map { |pkg| OpenStruct.new(pkg) }
+      @jobs = @manifest.fetch("jobs", []).map { |job| OpenStruct.new(job) }
+      @license = @manifest["license"] ? OpenStruct.new(@manifest["license"]) : nil
     end
 
     def compile
@@ -55,6 +56,7 @@ module Bosh::Cli
           say("SKIP".make_yellow)
           next
         end
+        nl
         package_file_path = find_package(package)
         FileUtils.cp(package_file_path,
                      File.join(@packages_dir, "#{package.name}.tgz"),
@@ -68,10 +70,19 @@ module Bosh::Cli
           say("SKIP".make_yellow)
           next
         end
+        nl
         job_file_path = find_job(job)
         FileUtils.cp(job_file_path,
                      File.join(@jobs_dir, "#{job.name}.tgz"),
                      :preserve => true)
+      end
+
+      header("Copying license")
+      if @license
+        say("license (#{@license.version})".ljust(30), " ")
+        nl
+        license_file_path = find_license(@license)
+        FileUtils.cp(license_file_path, File.join(@build_dir, 'license.tgz'), preserve: true)
       end
 
       header("Building tarball")
@@ -110,6 +121,14 @@ module Bosh::Cli
       dev_jobs_dir = File.join(@release_source, '.dev_builds', 'jobs', name)
       dev_index = Versions::VersionsIndex.new(dev_jobs_dir)
       find_in_indices(final_index, dev_index, job, 'job')
+    end
+
+    def find_license(license)
+      final_dir = File.join(@release_source, '.final_builds', 'license')
+      final_index = Versions::VersionsIndex.new(final_dir)
+      dev_dir = File.join(@release_source, '.dev_builds', 'license')
+      dev_index = Versions::VersionsIndex.new(dev_dir)
+      find_in_indices(final_index, dev_index, license, 'license')
     end
 
     def find_version_by_sha1(index, sha1)

@@ -6,47 +6,50 @@ module Bosh::Director
     describe Controllers::InfoController do
       include Rack::Test::Methods
 
-      let!(:temp_dir) { Dir.mktmpdir}
+      subject(:app) { described_class.new(identity_provider) }
 
-      before do
+      let(:identity_provider) { Bosh::Director::Api::LocalIdentityProvider.new(Bosh::Director::Api::UserManager.new) }
+      let(:temp_dir) { Dir.mktmpdir}
+      let(:test_config) do
         blobstore_dir = File.join(temp_dir, 'blobstore')
         FileUtils.mkdir_p(blobstore_dir)
 
-        test_config = Psych.load(spec_asset('test-director-config.yml'))
-        test_config['dir'] = temp_dir
-        test_config['blobstore'] = {
-            'provider' => 'local',
-            'options' => {'blobstore_path' => blobstore_dir}
+        config = Psych.load(spec_asset('test-director-config.yml'))
+        config['dir'] = temp_dir
+        config['blobstore'] = {
+          'provider' => 'local',
+          'options' => {'blobstore_path' => blobstore_dir}
         }
-        test_config['snapshots']['enabled'] = true
-        Config.configure(test_config)
-        @director_app = App.new(Config.load_hash(test_config))
+        config['snapshots']['enabled'] = true
+        config
       end
 
-      after do
-        FileUtils.rm_rf(temp_dir)
-      end
+      before { App.new(Config.load_hash(test_config)) }
 
-      def app
-        @rack_app ||= described_class.new
-      end
-
-      def login_as_admin
-        basic_authorize 'admin', 'admin'
-      end
-
-      def login_as(username, password)
-        basic_authorize username, password
-      end
-
-      it 'requires auth' do
-        get '/'
-        expect(last_response.status).to eq(401)
-      end
+      after { FileUtils.rm_rf(temp_dir) }
 
       it 'sets the date header' do
         get '/'
         expect(last_response.headers['Date']).not_to be_nil
+      end
+
+      it 'allows unauthenticated access' do
+        get '/'
+        expect(last_response.status).to eq(200)
+      end
+
+      context 'when HTTP auth is provided' do
+        it 'allows valid credentials' do
+          basic_authorize 'admin', 'admin'
+          get '/'
+          expect(last_response.status).to eq(200)
+        end
+
+        it 'denies invalid credentials' do
+          basic_authorize 'notadmin', 'admin'
+          get '/'
+          expect(last_response.status).to eq(401)
+        end
       end
 
       it 'allows Basic HTTP Auth with admin/admin credentials for ' +
@@ -57,7 +60,7 @@ module Bosh::Director
       end
 
       it 'responds with expected json' do
-        login_as_admin
+        basic_authorize 'admin', 'admin'
 
         get '/'
 
